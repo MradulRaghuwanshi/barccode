@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Barcode Scanner Billing System</title>
+    <style>
+        * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: Arial, sans-serif;
+}
+
+body {
+    background-color: #f5f5f5;
+    padding: 20px;
+}
+
+.container {
+    max-width: 1000px;
+    margin: 0 auto;
+    background-color: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+h1 {
+    text-align: center;
+    margin-bottom: 20px;
+    color: #333;
+}
+
+.tabs {
+    display: flex;
+    margin-bottom: 20px;
+    border-bottom: 1px solid #ddd;
+}
+
+.tab-button {
+    padding: 10px 20px;
+    background-color: #f1f1f1;
+    border: none;
+    cursor: pointer;
+    transition: 0.3s;
+    font-size: 16px;
+}
+
+.tab-button:hover {
+    background-color: #ddd;
+}
+
+.tab-button.active {
+    background-color: #4CAF50;
+    color: white;
+}
+
+.tab-content {
+    display: none;
+    padding: 20px;
+    border: 1px solid #ddd;
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+.scanner-container {
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+#scanner, #bill-scanner {
+    width: 100%;
+    height: 300px;
+    background-color: #f9f9f9;
+    margin-bottom: 10px;
+    border: 2px dashed #ccc;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+}
+
+#scanner video, #bill-scanner video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+button {
+    padding: 10px 15px;
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    margin: 5px;
+    font-size: 14px;
+}
+
+button:hover {
+    background-color: #45a049;
+}
+
+button:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
+}
+
+.product-form {
+    background-color: #f9f9f9;
+    padding: 20px;
+    border-radius: 8px;
+}
+
+.form-group {
+    margin-bottom: 15px;
+}
+
+label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+}
+
+input, select {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 16px;
+}
+
+.bill-container {
+    margin-top: 20px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 20px;
+}
+
+th, td {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}
+
+th {
+    background-color: #4CAF50;
+    color: white;
+}
+
+tr:hover {
+    background-color: #f5f5f5;
+}
+
+.bill-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+@media print {
+    .tabs, .scanner-container, button {
+        display: none;
+    }
+    
+    .tab-content {
+        display: block !important;
+        border: none;
+        padding: 0;
+    }
+    
+    #generate-bill {
+        display: block;
+    }
+    
+    #add-product {
+        display: none;
+    }
+}
+    </style>
+    <script>
+        // Product database
+let products = JSON.parse(localStorage.getItem('products')) || [];
+let currentScanner = null;
+let billItems = [];
+
+// Initialize the page
+document.addEventListener('DOMContentLoaded', function() {
+    // Load products from localStorage
+    if (localStorage.getItem('products')) {
+        products = JSON.parse(localStorage.getItem('products'));
+    }
+    
+    // Set up form submission
+    document.getElementById('product-form').addEventListener('submit', saveProduct);
+});
+
+// Tab functionality
+function openTab(tabId) {
+    // Hide all tab contents
+    const tabContents = document.getElementsByClassName('tab-content');
+    for (let i = 0; i < tabContents.length; i++) {
+        tabContents[i].classList.remove('active');
+    }
+    
+    // Deactivate all tab buttons
+    const tabButtons = document.getElementsByClassName('tab-button');
+    for (let i = 0; i < tabButtons.length; i++) {
+        tabButtons[i].classList.remove('active');
+    }
+    
+    // Activate the selected tab
+    document.getElementById(tabId).classList.add('active');
+    event.currentTarget.classList.add('active');
+    
+    // Stop any running scanners when switching tabs
+    if (currentScanner) {
+        Quagga.stop();
+        currentScanner = null;
+    }
+}
+
+// Product Scanner Functions
+function startScanner() {
+    document.getElementById('start-scanner').disabled = true;
+    document.getElementById('stop-scanner').disabled = false;
+    
+    Quagga.init({
+        inputStream: {
+            name: "Live",
+            type: "LiveStream",
+            target: document.querySelector('#scanner'),
+            constraints: {
+                width: 480,
+                height: 320,
+                facingMode: "environment"
+            },
+        },
+        decoder: {
+            readers: ["ean_reader", "ean_8_reader", "code_128_reader", "upc_reader", "upc_e_reader"]
+        },
+    }, function(err) {
+        if (err) {
+            console.log(err);
+            alert("Error initializing scanner: " + err);
+            return;
+        }
+        console.log("Initialization finished. Ready to start");
+        Quagga.start();
+        currentScanner = 'product';
+    });
+
+    Quagga.onDetected(function(result) {
+        const code = result.codeResult.code;
+        document.getElementById('barcode').value = code;
+        
+        // Check if product already exists
+        const existingProduct = products.find(p => p.barcode === code);
+        if (existingProduct) {
+            document.getElementById('product-name').value = existingProduct.name;
+            document.getElementById('category').value = existingProduct.category;
+            document.getElementById('price').value = existingProduct.price;
+            if (existingProduct.expiryDate) {
+                document.getElementById('expiry-date').value = existingProduct.expiryDate;
+            }
+            alert('Product already exists. You can update the details if needed.');
+        }
+        
+        // Stop scanner after detection
+        stopScanner();
+    });
+}
+
+function stopScanner() {
+    if (currentScanner === 'product') {
+        Quagga.stop();
+        currentScanner = null;
+        document.getElementById('start-scanner').disabled = false;
+        document.getElementById('stop-scanner').disabled = true;
+    }
+}
+
+// Bill Scanner Functions
+function startBillScanner() {
+    document.getElementById('start-bill-scanner').disabled = true;
+    document.getElementById('stop-bill-scanner').disabled = false;
+    
+    Quagga.init({
+        inputStream: {
+            name: "Live",
+            type: "LiveStream",
+            target: document.querySelector('#bill-scanner'),
+            constraints: {
+                width: 480,
+                height: 320,
+                facingMode: "environment"
+            },
+        },
+        decoder: {
+            readers: ["ean_reader", "ean_8_reader", "code_128_reader", "upc_reader", "upc_e_reader"]
+        },
+    }, function(err) {
+        if (err) {
+            console.log(err);
+            alert("Error initializing scanner: " + err);
+            return;
+        }
+        console.log("Initialization finished. Ready to start");
+        Quagga.start();
+        currentScanner = 'bill';
+    });
+
+    Quagga.onDetected(function(result) {
+        const code = result.codeResult.code;
+        
+        // Find the product in the database
+        const product = products.find(p => p.barcode === code);
+        if (product) {
+            addToBill(product);
+        } else {
+            alert('Product not found in database. Please add it first.');
+        }
+    });
+}
+
+function stopBillScanner() {
+    if (currentScanner === 'bill') {
+        Quagga.stop();
+        currentScanner = null;
+        document.getElementById('start-bill-scanner').disabled = false;
+        document.getElementById('stop-bill-scanner').disabled = true;
+    }
+}
+
+// Product Management
+function saveProduct(e) {
+    e.preventDefault();
+    
+    const barcode = document.getElementById('barcode').value;
+    const name = document.getElementById('product-name').value;
+    const category = document.getElementById('category').value;
+    const price = parseFloat(document.getElementById('price').value);
+    const expiryDate = document.getElementById('expiry-date').value;
+    
+    // Check if product already exists
+    const existingIndex = products.findIndex(p => p.barcode === barcode);
+    
+    const product = {
+        barcode,
+        name,
+        category,
+        price,
+        expiryDate
+    };
+    
+    if (existingIndex >= 0) {
+        // Update existing product
+        products[existingIndex] = product;
+    } else {
+        // Add new product
+        products.push(product);
+    }
+    
+    // Save to localStorage
+    localStorage.setItem('products', JSON.stringify(products));
+    
+    alert('Product saved successfully!');
+    document.getElementById('product-form').reset();
+}
+
+// Bill Management
+function addToBill(product) {
+    // Check if product already exists in bill
+    const existingItemIndex = billItems.findIndex(item => item.barcode === product.barcode);
+    
+    if (existingItemIndex >= 0) {
+        // Increment quantity
+        billItems[existingItemIndex].quantity += 1;
+    } else {
+        // Add new item
+        billItems.push({
+            ...product,
+            quantity: 1
+        });
+    }
+    
+    updateBillDisplay();
+    stopBillScanner();
+}
+
+function updateBillDisplay() {
+    const billItemsElement = document.getElementById('bill-items');
+    billItemsElement.innerHTML = '';
+    
+    let subtotal = 0;
+    
+    billItems.forEach((item, index) => {
+        const row = document.createElement('tr');
+        const itemTotal = item.price * item.quantity;
+        subtotal += itemTotal;
+        
+        row.innerHTML = `
+            <td>${item.name}</td>
+            <td>$${item.price.toFixed(2)}</td>
+            <td>
+                <input type="number" min="1" value="${item.quantity}" 
+                       onchange="updateQuantity(${index}, this.value)">
+            </td>
+            <td>$${itemTotal.toFixed(2)}</td>
+            <td><button onclick="removeFromBill(${index})">Remove</button></td>
+        `;
+        
+        billItemsElement.appendChild(row);
+    });
+    
+    const tax = subtotal * 0.1; // 10% tax
+    const total = subtotal + tax;
+    
+    document.getElementById('subtotal').textContent = `$${subtotal.toFixed(2)}`;
+    document.getElementById('tax').textContent = `$${tax.toFixed(2)}`;
+    document.getElementById('total').textContent = `$${total.toFixed(2)}`;
+}
+
+function updateQuantity(index, newQuantity) {
+    newQuantity = parseInt(newQuantity);
+    if (newQuantity > 0) {
+        billItems[index].quantity = newQuantity;
+        updateBillDisplay();
+    }
+}
+
+function removeFromBill(index) {
+    billItems.splice(index, 1);
+    updateBillDisplay();
+}
+
+function printBill() {
+    if (billItems.length === 0) {
+        alert('Bill is empty. Add some items first.');
+        return;
+    }
+    
+    window.print();
+}
+
+function clearBill() {
+    if (confirm('Are you sure you want to clear the current bill?')) {
+        billItems = [];
+        updateBillDisplay();
+    }
+}
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/quagga/dist/quagga.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Barcode Scanner Billing System</h1>
+        
+        <div class="tabs">
+            <button class="tab-button active" onclick="openTab('add-product')">Add Product</button>
+            <button class="tab-button" onclick="openTab('generate-bill')">Generate Bill</button>
+        </div>
+        
+        <!-- Add Product Tab -->
+        <div id="add-product" class="tab-content active">
+            <div class="scanner-container">
+                <div id="scanner"></div>
+                <button id="start-scanner" onclick="startScanner()">Start Scanner</button>
+                <button id="stop-scanner" onclick="stopScanner()" disabled>Stop Scanner</button>
+            </div>
+            
+            <div class="product-form">
+                <h2>Product Details</h2>
+                <form id="product-form">
+                    <div class="form-group">
+                        <label for="barcode">Barcode:</label>
+                        <input type="text" id="barcode" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="product-name">Product Name:</label>
+                        <input type="text" id="product-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="category">Category:</label>
+                        <select id="category" required>
+                            <option value="">Select Category</option>
+                            <option value="grocery">Grocery</option>
+                            <option value="electronics">Electronics</option>
+                            <option value="clothing">Clothing</option>
+                            <option value="pharmacy">Pharmacy</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="price">Price:</label>
+                        <input type="number" id="price" step="0.01" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="expiry-date">Expiry Date:</label>
+                        <input type="date" id="expiry-date">
+                    </div>
+                    <button type="submit">Save Product</button>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Generate Bill Tab -->
+        <div id="generate-bill" class="tab-content">
+            <div class="scanner-container">
+                <div id="bill-scanner"></div>
+                <button id="start-bill-scanner" onclick="startBillScanner()">Start Scanner</button>
+                <button id="stop-bill-scanner" onclick="stopBillScanner()" disabled>Stop Scanner</button>
+            </div>
+            
+            <div class="bill-container">
+                <h2>Current Bill</h2>
+                <table id="bill-table">
+                    <thead>
+                        <tr>
+                            <th>Product</th>
+                            <th>Price</th>
+                            <th>Qty</th>
+                            <th>Total</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bill-items">
+                        <!-- Bill items will be added here -->
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td colspan="3">Subtotal:</td>
+                            <td id="subtotal">$0.00</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td colspan="3">Tax (10%):</td>
+                            <td id="tax">$0.00</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td colspan="3">Total:</td>
+                            <td id="total">$0.00</td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+                
+                <div class="bill-actions">
+                    <button onclick="printBill()">Print Bill</button>
+                    <button onclick="clearBill()">Clear Bill</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
